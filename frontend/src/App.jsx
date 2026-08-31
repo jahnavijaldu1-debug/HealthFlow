@@ -2,15 +2,15 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 
 import PatientLayout from './layouts/PatientLayout.jsx'
 
-import PatientDashboard from './pages/patient/Dashboard'
-import HealthFlowID from './pages/patient/HealthFlowID'
-import Consent from './pages/patient/Consent'
-import OPDQueue from './pages/patient/OPDQueue'
-import Records from './pages/patient/Records'
-import LabReports from './pages/patient/LabReports'
+import PatientDashboard from './pages/patient/Dashboard.jsx'
+import HealthFlowID from './pages/patient/HealthFlowID.jsx'
+import Consent from './pages/patient/Consent.jsx'
+import OPDQueue from './pages/patient/OPDQueue.jsx'
+import Records from './pages/patient/Records.jsx'
+import LabReports from './pages/patient/LabReports.jsx'
 
-import DoctorDashboard from './pages/doctor/DoctorDashboard'
-import AdminDashboard from './pages/admin/AdminDashboard'
+import DoctorDashboard from './pages/doctor/DoctorDashboard.jsx'
+import AdminDashboard from './pages/admin/AdminDashboard.jsx'
 
 function Home() {
   return <h1>HealthFlow Home</h1>
@@ -25,9 +25,11 @@ function App() {
     <BrowserRouter>
       <Routes>
 
+        {/* Public */}
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
 
+        {/* Patient Portal */}
         <Route
           path="/patient"
           element={
@@ -82,11 +84,13 @@ function App() {
           }
         />
 
+        {/* Doctor Portal */}
         <Route
           path="/doctor"
           element={<DoctorDashboard />}
         />
 
+        {/* Admin Portal */}
         <Route
           path="/admin"
           element={<AdminDashboard />}
