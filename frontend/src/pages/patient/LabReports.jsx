@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
+import { analyzeLabReport } from '../../services/api'
 
 const TESTS = {
   hemoglobin: {
@@ -60,7 +61,6 @@ const TESTS = {
 }
 
 export default function LabReports() {
-
   const navigate = useNavigate()
 
   const [selectedTest, setSelectedTest] = useState('hemoglobin')
@@ -71,10 +71,9 @@ export default function LabReports() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const test = TESTS[selectedTest]
+  const test = TESTS[selectedTest] || TESTS.hemoglobin
 
-  async function analyzeReport() {
-
+  async function handleAnalyzeReport() {
     if (!value || Number.isNaN(Number(value))) {
       setError('Please enter a valid result value.')
       return
@@ -85,39 +84,12 @@ export default function LabReports() {
     setResult(null)
 
     try {
-
-      const response = await fetch(
-        'http://127.0.0.1:8000/lab/analyze',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            test_name: selectedTest,
-            value: Number(value),
-            gender: gender,
-            patient_id: 10
-          })
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok || data.error) {
-        throw new Error(
-          data.error || 'Analysis failed'
-        )
-      }
-
+      const data = await analyzeLabReport(selectedTest, value, gender, 10)
       setResult(data)
-
     } catch (err) {
-
       setError(
-        'Unable to connect to the HealthFlow backend.'
+        err.message || 'Unable to connect to the HealthFlow backend.'
       )
-
     } finally {
       setLoading(false)
     }
@@ -171,7 +143,7 @@ export default function LabReports() {
                 setSelectedTest(e.target.value)
                 setResult(null)
               }}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"
             >
               {Object.entries(TESTS).map(
                 ([key, item]) => (
@@ -195,10 +167,10 @@ export default function LabReports() {
                 step="any"
                 value={value}
                 onChange={e => setValue(e.target.value)}
-                className="min-w-0 flex-1 rounded-l-xl border border-slate-200 px-4 py-3"
+                className="min-w-0 flex-1 rounded-l-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"
               />
 
-              <div className="flex items-center rounded-r-xl border border-l-0 border-slate-200 bg-slate-50 px-4 text-sm">
+              <div className="flex items-center rounded-r-xl border border-l-0 border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500">
                 {test.unit}
               </div>
 
@@ -213,7 +185,7 @@ export default function LabReports() {
             <select
               value={gender}
               onChange={e => setGender(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500"
             >
               <option value="female">Female</option>
               <option value="male">Male</option>
@@ -224,7 +196,7 @@ export default function LabReports() {
         </div>
 
         <button
-          onClick={analyzeReport}
+          onClick={handleAnalyzeReport}
           disabled={loading}
           className="mt-6 flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
         >
@@ -262,7 +234,7 @@ export default function LabReports() {
               </h2>
 
               <p className="text-sm text-green-600">
-                Report analyzed and saved successfully
+                Report analyzed and saved successfully to your records
               </p>
             </div>
 
@@ -393,7 +365,6 @@ export default function LabReports() {
   )
 }
 
-
 function ResultCard({
   title,
   value,
@@ -417,7 +388,6 @@ function ResultCard({
     </div>
   )
 }
-
 
 function StatusBox({
   icon,

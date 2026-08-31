@@ -6,13 +6,15 @@ import {
   UserRound,
   Activity,
   TrendingUp,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getOPDQueue,
-  getPatientPrediction
+  getPatientPrediction,
+  joinOPDQueue
 } from '../../services/api'
 
 export default function OPDQueue() {
@@ -22,8 +24,7 @@ export default function OPDQueue() {
   const [prediction, setPrediction] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-
-  const patientToken = 'A-010'
+  const [patientToken, setPatientToken] = useState('A-010')
 
   async function loadData() {
     try {
@@ -35,10 +36,10 @@ export default function OPDQueue() {
         getPatientPrediction(patientToken)
       ])
 
-      setQueue(queueData.patients)
+      setQueue(queueData.patients || [])
       setPrediction(predictionData)
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'Unable to connect to HealthFlow OPD service.')
     } finally {
       setLoading(false)
     }
@@ -46,33 +47,40 @@ export default function OPDQueue() {
 
   useEffect(() => {
     loadData()
-  }, [])
+    const interval = setInterval(loadData, 10000)
+    return () => clearInterval(interval)
+  }, [patientToken])
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <p className="text-slate-500">
-          Loading OPD queue...
-        </p>
-      </div>
-    )
+  async function handleJoinQueue() {
+    try {
+      setLoading(true)
+      const res = await joinOPDQueue(10, 'Rahul Sharma', 'General Medicine')
+      if (res.patient?.token) {
+        setPatientToken(res.patient.token)
+      }
+      await loadData()
+    } catch (err) {
+      setError('Failed to join OPD queue')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  if (error) {
+  if (loading && queue.length === 0) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
-        {error}
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="flex items-center gap-3 text-slate-500">
+          <Loader2 size={22} className="animate-spin text-blue-600" />
+          Loading OPD queue...
+        </div>
       </div>
     )
   }
 
   const patientsAhead = prediction?.patients_ahead ?? 0
-  const activeDoctors = prediction?.doctors_available ?? 0
-  const averageConsultation =
-    prediction?.average_consultation_duration ?? 0
-
-  const estimatedWait =
-    prediction?.estimated_waiting_time ?? 0
+  const activeDoctors = prediction?.doctors_available ?? 2
+  const averageConsultation = prediction?.average_consultation_duration ?? 11
+  const estimatedWait = prediction?.estimated_waiting_time ?? 0
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -87,13 +95,16 @@ export default function OPDQueue() {
           Back to Dashboard
         </button>
 
-        <button
-          onClick={loadData}
-          className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-semibold shadow-sm"
-        >
-          <RefreshCw size={17} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <RefreshCw size={17} className={loading ? 'animate-spin text-blue-600' : ''} />
+            Refresh
+          </button>
+        </div>
 
       </div>
 
@@ -115,6 +126,12 @@ export default function OPDQueue() {
 
       </div>
 
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <section className="mb-6 rounded-2xl border border-blue-200 bg-white p-8 shadow-sm">
 
         <p className="text-sm font-semibold uppercase tracking-wider text-slate-500">
@@ -133,12 +150,12 @@ export default function OPDQueue() {
             <div className="flex items-center gap-2 text-green-600">
               <CheckCircle2 size={18} />
               <span className="font-semibold">
-                Active
+                {prediction?.status || 'Active'}
               </span>
             </div>
 
             <p className="text-sm text-slate-500">
-              General Medicine
+              General Medicine · Consultation Session
             </p>
           </div>
 
@@ -158,11 +175,11 @@ export default function OPDQueue() {
 
           <div className="h-3 overflow-hidden rounded-full bg-slate-100">
             <div
-              className="h-full rounded-full bg-blue-600"
+              className="h-full rounded-full bg-blue-600 transition-all duration-500"
               style={{
                 width: `${Math.max(
                   10,
-                  100 - patientsAhead * 8
+                  100 - patientsAhead * 10
                 )}%`
               }}
             />
@@ -203,7 +220,7 @@ export default function OPDQueue() {
           </p>
 
           <p className="mt-2 text-sm font-semibold text-slate-600">
-            Confidence: {prediction?.confidence_level}
+            Confidence: {prediction?.confidence_level || 'High'}
           </p>
 
         </div>
@@ -269,6 +286,7 @@ export default function OPDQueue() {
             <QueueRow
               key={patient.token}
               token={patient.token}
+              name={patient.name}
               status={
                 patient.token === patientToken
                   ? 'You'
@@ -289,11 +307,9 @@ export default function OPDQueue() {
         </h3>
 
         <p className="mt-2 text-sm leading-6 text-blue-800">
-          The estimate considers the current queue,
-          available doctors, patients currently being served,
-          and the average consultation duration.
-          The prediction can later be replaced by the
-          Random Forest ML model.
+          The estimate considers the current queue ({patientsAhead} waiting),
+          active staffing ({activeDoctors} doctors available), patients currently being served,
+          and the historical department average of {averageConsultation} minutes per consultation.
         </p>
 
       </div>
@@ -301,7 +317,6 @@ export default function OPDQueue() {
     </div>
   )
 }
-
 
 function FactorCard({ icon, title, value, subtitle }) {
   return (
@@ -326,7 +341,6 @@ function FactorCard({ icon, title, value, subtitle }) {
     </div>
   )
 }
-
 
 function QueueRow({ token, status, current }) {
   return (

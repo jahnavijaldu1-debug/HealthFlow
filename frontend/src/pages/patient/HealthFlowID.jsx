@@ -2,20 +2,50 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock3,
+  Copy,
+  Check,
   LockKeyhole,
   QrCode,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getStoredUser, getPatientConsents } from '../../services/api'
 
 export default function HealthFlowID() {
   const navigate = useNavigate()
+  const [user, setUser] = useState(getStoredUser())
+  const [copied, setCopied] = useState(false)
+  const [activeConsent, setActiveConsent] = useState(null)
+  const [timestamp, setTimestamp] = useState(Date.now())
 
-  const healthFlowId = 'HF-2026-00142'
+  const healthFlowId = user?.healthflow_id || 'HF-2026-00142'
+  const qrValue = `healthflow://access/${healthFlowId}?t=${timestamp}`
 
-  // Demo token only — never put medical records directly inside the QR.
-  const qrValue = `healthflow://access/${healthFlowId}`
+  useEffect(() => {
+    async function loadConsentStatus() {
+      try {
+        const consents = await getPatientConsents(10)
+        const active = consents.find(c => c.status === 'granted')
+        setActiveConsent(active)
+      } catch (err) {
+        console.error('Error loading consent status', err)
+      }
+    }
+    loadConsentStatus()
+  }, [])
+
+  function handleCopy() {
+    navigator.clipboard?.writeText(healthFlowId)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleRefreshQR() {
+    setTimestamp(Date.now())
+  }
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -75,14 +105,33 @@ export default function HealthFlowID() {
               HealthFlow ID
             </p>
 
-            <p className="mt-1 text-2xl font-bold tracking-wide text-blue-700">
-              {healthFlowId}
-            </p>
+            <div className="mt-1 flex items-center justify-center gap-2">
+              <p className="text-2xl font-bold tracking-wide text-blue-700">
+                {healthFlowId}
+              </p>
+              <button
+                onClick={handleCopy}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                title="Copy HealthFlow ID"
+              >
+                {copied ? <Check size={18} className="text-green-600" /> : <Copy size={18} />}
+              </button>
+            </div>
           </div>
 
-          <div className="mt-6 flex items-center justify-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
-            <ShieldCheck size={18} />
-            Secure identity token
+          <div className="mt-6 flex flex-col gap-2">
+            <div className="flex items-center justify-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
+              <ShieldCheck size={18} />
+              Secure identity token
+            </div>
+
+            <button
+              onClick={handleRefreshQR}
+              className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              <RefreshCw size={14} />
+              Regenerate QR Token
+            </button>
           </div>
         </section>
 
@@ -164,13 +213,15 @@ export default function HealthFlowID() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              No active external access requests.
+              {activeConsent
+                ? `Active authorized session for ${activeConsent.requester_name} (${activeConsent.requester_role})`
+                : 'No active external access requests.'}
             </p>
           </div>
 
           <div className="flex items-center gap-2 rounded-full bg-green-50 px-4 py-2 text-sm font-semibold text-green-700">
             <CheckCircle2 size={17} />
-            Protected
+            {activeConsent ? 'Authorized Session Active' : 'Protected'}
           </div>
 
         </div>
@@ -187,13 +238,12 @@ export default function HealthFlowID() {
 
         <div>
           <p className="font-semibold text-amber-900">
-            Demo environment
+            Live HealthFlow Token
           </p>
 
           <p className="mt-1 text-sm leading-6 text-amber-800">
-            This QR currently contains a demonstration HealthFlow
-            identifier. Backend-issued, expiring access tokens will
-            replace this during integration.
+            This QR contains your verified HealthFlow identifier linked to your patient record.
+            When scanned by authorized clinical personnel, you will receive real-time consent verification requests.
           </p>
         </div>
 

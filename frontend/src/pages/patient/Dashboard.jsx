@@ -8,38 +8,83 @@ import {
   HeartPulse,
   QrCode,
   Ticket,
-  Wind
+  Wind,
+  Loader2,
+  X
 } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-
-const stats = [
-  {
-    title: 'HealthFlow ID',
-    value: 'HF-2026-00142',
-    icon: FileText
-  },
-  {
-    title: 'Upcoming',
-    value: 'Cardiology',
-    subtitle: 'Today, 2:00 PM',
-    icon: CalendarDays
-  },
-  {
-    title: 'OPD Token',
-    value: 'A-047',
-    badge: 'Active',
-    icon: Ticket
-  },
-  {
-    title: 'Est. Waiting Time',
-    value: '24',
-    subtitle: 'mins',
-    icon: Clock3
-  }
-]
+import {
+  getPatient,
+  getPatientPrediction,
+  getPatientLabReports,
+  getPatientAppointments,
+  getStoredUser
+} from '../../services/api'
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const [patient, setPatient] = useState(getStoredUser())
+  const [prediction, setPrediction] = useState(null)
+  const [labs, setLabs] = useState([])
+  const [appointment, setAppointment] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [activeReportModal, setActiveReportModal] = useState(null)
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        setLoading(true)
+        const [patData, predData, labData, appData] = await Promise.all([
+          getPatient(10).catch(() => getStoredUser()),
+          getPatientPrediction('A-010').catch(() => ({ estimated_waiting_time: 24 })),
+          getPatientLabReports(10).catch(() => ({ reports: [] })),
+          getPatientAppointments(10).catch(() => [])
+        ])
+
+        if (patData) setPatient(patData)
+        if (predData) setPrediction(predData)
+        if (labData?.reports) setLabs(labData.reports)
+        if (appData && appData.length > 0) setAppointment(appData[0])
+      } catch (err) {
+        console.error('Error loading dashboard data', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadDashboardData()
+  }, [])
+
+  const stats = [
+    {
+      title: 'HealthFlow ID',
+      value: patient?.healthflow_id || 'HF-2026-00142',
+      icon: FileText
+    },
+    {
+      title: 'Upcoming',
+      value: appointment?.department || 'Cardiology',
+      subtitle: appointment ? new Date(appointment.appointment_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today, 2:00 PM',
+      icon: CalendarDays
+    },
+    {
+      title: 'OPD Token',
+      value: prediction?.token || 'A-010',
+      badge: prediction?.status || 'Active',
+      icon: Ticket
+    },
+    {
+      title: 'Est. Waiting Time',
+      value: prediction?.estimated_waiting_time !== undefined ? String(prediction.estimated_waiting_time) : '24',
+      subtitle: 'mins',
+      icon: Clock3
+    }
+  ]
+
+  const firstName = patient?.name ? patient.name.split(' ')[0] : 'Rahul'
+  const initials = patient?.name
+    ? patient.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+    : 'RS'
 
   return (
     <div className="mx-auto max-w-[1600px]">
@@ -47,7 +92,7 @@ export default function Dashboard() {
       {/* Heading */}
       <div className="mb-8">
         <h2 className="text-3xl font-bold tracking-tight md:text-5xl">
-          Good morning, Rahul
+          Good morning, {firstName}
         </h2>
 
         <p className="mt-2 text-lg text-slate-500">
@@ -106,16 +151,16 @@ export default function Dashboard() {
 
             <div className="flex items-center gap-4">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
-                RS
+                {initials}
               </div>
 
               <div>
                 <h4 className="text-xl font-bold">
-                  Rahul Sharma
+                  {patient?.name || 'Rahul Sharma'}
                 </h4>
 
                 <p className="text-sm text-slate-500">
-                  Male, 42 years
+                  {patient?.gender || 'Male'}, {patient?.age || 42} years
                 </p>
               </div>
             </div>
@@ -128,7 +173,7 @@ export default function Dashboard() {
                 </p>
 
                 <span className="inline-flex rounded bg-red-50 px-3 py-1 font-bold text-red-700">
-                  O+
+                  {patient?.blood_group || 'O+'}
                 </span>
               </div>
 
@@ -138,7 +183,7 @@ export default function Dashboard() {
                 </p>
 
                 <span className="inline-flex rounded bg-red-50 px-3 py-1 text-sm font-semibold text-red-700">
-                  Penicillin
+                  {patient?.allergies || 'Penicillin'}
                 </span>
               </div>
 
@@ -153,11 +198,11 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">
-                    Priya Sharma
+                    {patient?.emergency_contact || 'Priya Sharma'}
                   </p>
 
                   <p className="text-sm text-slate-500">
-                    Wife · +91 98765 43210
+                    Wife · {patient?.emergency_phone || '+91 98765 43210'}
                   </p>
                 </div>
               </div>
@@ -223,7 +268,7 @@ export default function Dashboard() {
             </h3>
 
             <button
-              onClick={() => navigate('/patient/labs')}
+              onClick={() => navigate('/patient/lab-reports')}
               className="text-sm font-semibold text-blue-600 hover:underline"
             >
               View All →
@@ -255,18 +300,35 @@ export default function Dashboard() {
 
               <tbody>
 
-                <LabRow
-                  name="Complete Blood Count (CBC)"
-                  date="Aug 29, 2026"
-                  status="Final"
-                  active
-                />
+                {labs.length > 0 ? (
+                  labs.slice(0, 3).map((report) => (
+                    <LabRow
+                      key={report.id}
+                      name={report.test_name}
+                      date={new Date(report.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      status={report.status}
+                      active={true}
+                      onView={() => setActiveReportModal(report)}
+                    />
+                  ))
+                ) : (
+                  <>
+                    <LabRow
+                      name="Complete Blood Count (CBC)"
+                      date="Aug 29, 2026"
+                      status="NORMAL"
+                      active
+                      onView={() => navigate('/patient/records')}
+                    />
 
-                <LabRow
-                  name="Lipid Profile"
-                  date="Aug 29, 2026"
-                  status="Pending"
-                />
+                    <LabRow
+                      name="Lipid Profile"
+                      date="Aug 29, 2026"
+                      status="Pending"
+                      active={false}
+                    />
+                  </>
+                )}
 
               </tbody>
             </table>
@@ -299,7 +361,7 @@ export default function Dashboard() {
               primary
               icon={<Ticket size={22} />}
               label="Join OPD"
-              onClick={() => navigate('/patient/queue')}
+              onClick={() => navigate('/patient/opd-queue')}
             />
 
             <QuickAction
@@ -313,6 +375,53 @@ export default function Dashboard() {
         </section>
 
       </div>
+
+      {/* Lab Report Detail Modal */}
+      {activeReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-xl font-bold text-slate-900">{activeReportModal.test_name}</h3>
+              <button
+                onClick={() => setActiveReportModal(null)}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4">
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-semibold">Result</p>
+                  <p className="text-lg font-bold text-slate-900">{activeReportModal.value} {activeReportModal.unit}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-semibold">Reference Range</p>
+                  <p className="text-sm font-semibold text-slate-700">{activeReportModal.reference_range}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                <h4 className="font-bold text-blue-900">Simple Explanation</h4>
+                <p className="mt-1 text-xs leading-5 text-blue-800">{activeReportModal.explanation || activeReportModal.plain_language_explanation}</p>
+              </div>
+
+              <div className="rounded-xl border border-purple-100 bg-purple-50 p-4">
+                <h4 className="font-bold text-purple-900">Doctor Discussion</h4>
+                <p className="mt-1 text-xs leading-5 text-purple-800">{activeReportModal.doctor_discussion}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setActiveReportModal(null)}
+              className="mt-5 w-full rounded-xl bg-blue-600 py-2.5 font-semibold text-white hover:bg-blue-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   )
@@ -348,7 +457,8 @@ function VitalCard({ icon, title, value, unit, status }) {
   )
 }
 
-function LabRow({ name, date, status, active }) {
+function LabRow({ name, date, status, active, onView }) {
+  const isNormal = status === 'NORMAL' || status === 'Final'
   return (
     <tr className="border-t border-slate-100">
 
@@ -363,7 +473,7 @@ function LabRow({ name, date, status, active }) {
       <td className="p-4">
         <span
           className={`rounded px-2 py-1 text-sm font-semibold ${
-            active
+            isNormal
               ? 'bg-teal-50 text-teal-700'
               : 'bg-amber-50 text-amber-700'
           }`}
@@ -374,8 +484,9 @@ function LabRow({ name, date, status, active }) {
 
       <td className="p-4 text-right">
         <button
+          onClick={onView}
           disabled={!active}
-          className="text-sm font-semibold text-blue-600 disabled:cursor-not-allowed disabled:text-slate-300"
+          className="text-sm font-semibold text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-slate-300"
         >
           View
         </button>

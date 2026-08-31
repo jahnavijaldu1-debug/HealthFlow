@@ -6,39 +6,51 @@ import {
   AlertCircle,
   MessageCircle,
   RefreshCw,
-  Loader2
+  Loader2,
+  Stethoscope,
+  Plus,
+  X
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import {
+  getPatientLabReports,
+  getPatientRecords,
+  createMedicalRecord
+} from '../../services/api'
 
 export default function Records() {
   const navigate = useNavigate()
 
   const [reports, setReports] = useState([])
+  const [medicalRecords, setMedicalRecords] = useState([])
+  const [activeTab, setActiveTab] = useState('labs') // 'labs' or 'clinical'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newDiagnosis, setNewDiagnosis] = useState('')
+  const [newNotes, setNewNotes] = useState('')
+  const [newDoctor, setNewDoctor] = useState('Dr. Anil Kumar')
+  const [newDept, setNewDept] = useState('General Medicine')
+  const [submitting, setSubmitting] = useState(false)
 
   const patientId = 10
 
-  async function loadReports() {
+  async function loadData() {
     try {
       setLoading(true)
       setError('')
 
-      const response = await fetch(
-        `http://127.0.0.1:8000/lab/patient/${patientId}`
-      )
+      const [labData, recData] = await Promise.all([
+        getPatientLabReports(patientId).catch(() => ({ reports: [] })),
+        getPatientRecords(patientId).catch(() => [])
+      ])
 
-      if (!response.ok) {
-        throw new Error('Failed to load reports')
-      }
-
-      const data = await response.json()
-
-      setReports(data.reports || [])
+      setReports(labData.reports || [])
+      setMedicalRecords(recData || [])
     } catch (err) {
       setError(
-        'Unable to load your lab reports. Please make sure the HealthFlow backend is running.'
+        'Unable to load your medical records. Please make sure the HealthFlow backend is running.'
       )
     } finally {
       setLoading(false)
@@ -46,8 +58,33 @@ export default function Records() {
   }
 
   useEffect(() => {
-    loadReports()
+    loadData()
   }, [])
+
+  async function handleAddRecord(e) {
+    e.preventDefault()
+    if (!newDiagnosis) return
+    try {
+      setSubmitting(true)
+      await createMedicalRecord({
+        patient_id: patientId,
+        doctor_name: newDoctor,
+        department: newDept,
+        visit_type: 'Clinical Consultation',
+        diagnosis: newDiagnosis,
+        clinical_notes: newNotes,
+        treatment: 'Standard clinical management'
+      })
+      setShowAddModal(false)
+      setNewDiagnosis('')
+      setNewNotes('')
+      await loadData()
+    } catch (err) {
+      alert('Failed to save medical note')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -62,7 +99,7 @@ export default function Records() {
       </button>
 
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
 
         <div className="flex items-center gap-3">
 
@@ -82,19 +119,53 @@ export default function Records() {
 
         </div>
 
-        <button
-          onClick={loadReports}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          {loading ? (
-            <Loader2 size={17} className="animate-spin" />
-          ) : (
-            <RefreshCw size={17} />
-          )}
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            <Plus size={17} />
+            Add Note
+          </button>
 
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {loading ? (
+              <Loader2 size={17} className="animate-spin" />
+            ) : (
+              <RefreshCw size={17} />
+            )}
+            Refresh
+          </button>
+        </div>
+
+      </div>
+
+      {/* Tabs */}
+      <div className="mb-6 flex gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('labs')}
+          className={`border-b-2 px-4 py-2.5 text-sm font-bold transition ${
+            activeTab === 'labs'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Lab Reports ({reports.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('clinical')}
+          className={`border-b-2 px-4 py-2.5 text-sm font-bold transition ${
+            activeTab === 'clinical'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Clinical Visits ({medicalRecords.length})
+        </button>
       </div>
 
       {/* Summary */}
@@ -141,7 +212,7 @@ export default function Records() {
           <div className="flex items-center gap-3 text-slate-500">
             <Loader2
               size={22}
-              className="animate-spin"
+              className="animate-spin text-blue-600"
             />
             Loading your records...
           </div>
@@ -149,7 +220,7 @@ export default function Records() {
       )}
 
       {/* Empty */}
-      {!loading && !error && reports.length === 0 && (
+      {!loading && !error && activeTab === 'labs' && reports.length === 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
 
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
@@ -174,8 +245,8 @@ export default function Records() {
         </div>
       )}
 
-      {/* Reports */}
-      {!loading && reports.length > 0 && (
+      {/* Lab Reports Tab */}
+      {!loading && activeTab === 'labs' && reports.length > 0 && (
         <section className="space-y-5">
 
           {reports.map(report => (
@@ -188,10 +259,129 @@ export default function Records() {
         </section>
       )}
 
+      {/* Clinical Visits Tab */}
+      {!loading && activeTab === 'clinical' && (
+        <section className="space-y-5">
+          {medicalRecords.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+              <Stethoscope className="mx-auto h-12 w-12 text-slate-400" />
+              <p className="mt-4 text-slate-600 font-semibold">No clinical visit notes on record.</p>
+            </div>
+          ) : (
+            medicalRecords.map(rec => (
+              <article key={rec.id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">{rec.diagnosis || 'Clinical Consultation'}</h2>
+                    <p className="text-xs text-slate-500">{rec.doctor_name || 'Consultant'} · {rec.department || 'General Medicine'}</p>
+                  </div>
+                  <span className="text-xs text-slate-400">
+                    {formatDate(rec.created_at)}
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-slate-400">Clinical Notes</p>
+                    <p className="mt-1 leading-6 text-slate-700">{rec.clinical_notes || 'Routine examination completed.'}</p>
+                  </div>
+
+                  {rec.treatment && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-slate-400">Treatment Plan</p>
+                      <p className="mt-1 leading-6 text-slate-700">{rec.treatment}</p>
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))
+          )}
+        </section>
+      )}
+
+      {/* Add Clinical Note Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-xl font-bold text-slate-900">Add Clinical Note</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddRecord} className="space-y-4 text-sm">
+              <div>
+                <label className="mb-1 block font-semibold text-slate-700">Diagnosis / Assessment</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Hypertension review, Routine checkup"
+                  value={newDiagnosis}
+                  onChange={e => setNewDiagnosis(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-700">Doctor</label>
+                  <input
+                    type="text"
+                    value={newDoctor}
+                    onChange={e => setNewDoctor(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-700">Department</label>
+                  <input
+                    type="text"
+                    value={newDept}
+                    onChange={e => setNewDept(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-semibold text-slate-700">Clinical Notes</label>
+                <textarea
+                  rows={3}
+                  placeholder="Enter observation, symptoms, and plan..."
+                  value={newNotes}
+                  onChange={e => setNewNotes(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 p-3 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 rounded-xl border border-slate-200 py-2.5 font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 rounded-xl bg-blue-600 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting ? 'Saving...' : 'Save Note'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
-
 
 function SummaryCard({
   title,
@@ -217,9 +407,7 @@ function SummaryCard({
   )
 }
 
-
 function LabReportCard({ report }) {
-
   const isNormal = report.status === 'NORMAL'
 
   return (
@@ -282,7 +470,7 @@ function LabReportCard({ report }) {
         </h3>
 
         <p className="mt-2 text-sm leading-6 text-blue-800">
-          {report.explanation}
+          {report.explanation || report.plain_language_explanation}
         </p>
 
       </div>
@@ -319,7 +507,6 @@ function LabReportCard({ report }) {
   )
 }
 
-
 function InfoBox({
   title,
   value
@@ -339,9 +526,7 @@ function InfoBox({
   )
 }
 
-
 function StatusBadge({ status }) {
-
   const normal = status === 'NORMAL'
 
   return (
@@ -365,9 +550,7 @@ function StatusBadge({ status }) {
   )
 }
 
-
 function formatDate(date) {
-
   if (!date) {
     return 'Recently analyzed'
   }
